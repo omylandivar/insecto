@@ -11,11 +11,13 @@
 <style>
 html,body{margin:0;height:100%;overflow:hidden;background:#e8e6e1;touch-action:none;user-select:none;-webkit-user-select:none;-webkit-touch-callout:none}
 canvas{position:fixed;inset:0;width:100%;height:100%;display:block}
+#cam{position:fixed;inset:0;width:100%;height:100%;object-fit:cover;display:none;background:#000}
 #start{position:fixed;inset:0;display:flex;flex-direction:column;align-items:center;justify-content:center;font:20px/1.4 system-ui,sans-serif;color:#555;text-align:center;padding:24px}
 #start small{display:block;margin-top:10px;font-size:14px;color:#888}
 </style>
 </head>
 <body>
+<video id="cam" autoplay playsinline muted></video>
 <canvas id="c"></canvas>
 <div id="start">Cargando…</div>
 <script>
@@ -83,7 +85,7 @@ function load(b64) {
 }
 Promise.all([load(A.body.png)].concat(A.legs.map(l => load(l.png)))).then(imgs => {
   bodyImg = imgs[0]; legImgs = imgs.slice(1); ready = true;
-  msg.innerHTML = 'Toca la pantalla una vez para iniciar<br><small>La cucaracha aparece a los 5 segundos. Entrega el celular.</small>';
+  msg.innerHTML = 'Toca la pantalla una vez para iniciar<br><small>Se abrirá la cámara trasera: apunta a la palma de la mano.<br>La cucaracha aparece a los 5 segundos. Entrega el celular.</small>';
 });
 
 // ---------- audio y vibración ----------
@@ -112,6 +114,20 @@ function thump() {
     g.gain.setValueAtTime(0.5, AC.currentTime); g.gain.exponentialRampToValueAtTime(0.001, AC.currentTime + 0.3);
     o.connect(g); g.connect(AC.destination); o.start(); o.stop(AC.currentTime + 0.32);
   } catch (e) {}
+}
+// ---------- cámara (fondo transparente) ----------
+const cam = document.getElementById('cam');
+let camOn = false;
+const USE_CAM = !new URLSearchParams(location.search).has('nocam');
+function camInit() {
+  if (!USE_CAM || camOn || !navigator.mediaDevices || !navigator.mediaDevices.getUserMedia) return;
+  navigator.mediaDevices.getUserMedia({ audio: false, video: { facingMode: { ideal: 'environment' }, width: { ideal: 1920 }, height: { ideal: 1080 } } })
+    .then(function (st) {
+      cam.srcObject = st; cam.style.display = 'block';
+      const p = cam.play(); if (p && p.catch) p.catch(function () {});
+      camOn = true;
+    })
+    .catch(function () { camOn = false; });
 }
 function buzz(p) { try { if (navigator.vibrate) navigator.vibrate(p); } catch (e) {} }
 
@@ -574,9 +590,11 @@ function update(dt) {
 function render() {
   ctx.setTransform(DPR, 0, 0, DPR, 0, 0);
   ctx.clearRect(0, 0, W, H);
-  const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
-  g.addColorStop(0, '#f3f2ef'); g.addColorStop(1, '#dad8d2');
-  ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  if (!camOn) {
+    const g = ctx.createLinearGradient(0, 0, W * 0.4, H);
+    g.addColorStop(0, '#f3f2ef'); g.addColorStop(1, '#dad8d2');
+    ctx.fillStyle = g; ctx.fillRect(0, 0, W, H);
+  }
   if (!run || !ready) return;
   drawFx();
   if (R.visible) drawRoach();
@@ -602,6 +620,7 @@ function onTap() {
     started = true;
     msg.style.display = 'none';
     audioInit();
+    camInit();
     try { if (document.documentElement.requestFullscreen) document.documentElement.requestFullscreen().catch(function () {}); } catch (e) {}
     try { if (navigator.wakeLock) navigator.wakeLock.request('screen').catch(function () {}); } catch (e) {}
     buzz(10);
